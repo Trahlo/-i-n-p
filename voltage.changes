@@ -1,0 +1,72 @@
+#include <WiFi.h>
+#include <ZMPT101B.h>
+#include "ThingSpeak.h"
+
+//----- Network credentials
+const char* ssid = "BKSTAR_T04";       // Enter SSID
+const char* passphrase = "stemstar";   // Enter the password
+
+WiFiServer server(80);
+WiFiClient client;
+
+//----- ThingSpeak channel details
+unsigned long myChannelNumber = 3;
+const char* myWriteAPIKey = "YVQOS5ZQ73KI333E";
+
+//----- Timer variables
+unsigned long lastTime = 0;
+const unsigned long timerDelay = 1000;  // 1 giây
+
+#define SENSITIVITY 500.0f       // Điều chỉnh độ nhạy
+#define CALIBRATION_FACTOR 1.49  // Hệ số hiệu chuẩn (230 / 155)
+
+ZMPT101B voltageSensor(27, 50.0);
+
+void setup() {
+    Serial.begin(115200); // Initialize Serial Monitor
+    Serial.print("Connecting to ");
+    Serial.println(ssid);
+
+    WiFi.begin(ssid, passphrase);
+    int attempts = 0;
+    
+    // Chờ kết nối WiFi với giới hạn số lần thử
+    while (WiFi.status() != WL_CONNECTED && attempts < 20) {
+        delay(500);
+        Serial.print(".");
+        attempts++;
+    }
+
+    if (WiFi.status() == WL_CONNECTED) {
+        Serial.println("\nWiFi connected.");
+        Serial.print("IP address: ");
+        Serial.println(WiFi.localIP());
+        server.begin();
+    } else {
+        Serial.println("\nFailed to connect to WiFi.");
+    }
+
+    voltageSensor.setSensitivity(SENSITIVITY);
+    ThingSpeak.begin(client);  // Initialize ThingSpeak
+}
+
+void loop() {
+    if ((millis() - lastTime) > timerDelay) {
+        float voltage = voltageSensor.getRmsVoltage() * CALIBRATION_FACTOR;  // Đọc và hiệu chuẩn điện áp
+        Serial.print("Voltage: ");
+        Serial.println(voltage);
+
+        // Gửi dữ liệu lên ThingSpeak
+        ThingSpeak.setField(1, voltage);
+        int statusCode = ThingSpeak.writeFields(myChannelNumber, myWriteAPIKey);
+
+        if (statusCode == 200) {
+            Serial.println("✅ Channel update successful.");
+        } else {
+            Serial.print("❌ Problem updating channel. HTTP error code: ");
+            Serial.println(statusCode);
+        }
+
+        lastTime = millis();
+    }
+}
